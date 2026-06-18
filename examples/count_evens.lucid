@@ -1,0 +1,10 @@
+fn @count ($xs : #List[#Int]) -> #Int = do
+  var $c : #Int = 0 ;
+  foreach $x : #Int in $xs do
+    if eq_int(mod($x, 2), 0) do
+      set $c = add($c, 1) ;
+    else
+    end if ;
+  end foreach ;
+  return $c ;
+end @count ;

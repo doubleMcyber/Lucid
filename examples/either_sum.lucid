@@ -1,0 +1,5 @@
+variant #Either = Left(#Int) | Right(#Str) ;
+
+fn @code ($e : #Either) -> #Int = do
+  return match #Either $e of case Left($n : #Int) -> $n case Right($s : #Str) -> len_str($s) end match ;
+end @code ;

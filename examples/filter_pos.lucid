@@ -1,0 +1,7 @@
+fn @ispos ($n : #Int) -> #Bool = do
+  return gt_int($n, 0) ;
+end @ispos ;
+
+fn @keeppos ($xs : #List[#Int]) -> #List[#Int] = do
+  return filter($xs, @ispos) ;
+end @keeppos ;

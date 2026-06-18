@@ -1,0 +1,3 @@
+fn @implies ($a : #Bool, $b : #Bool) -> #Bool = do
+  return or(not($a), $b) ;
+end @implies ;

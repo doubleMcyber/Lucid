@@ -1,0 +1,3 @@
+fn @rev ($xs : #List[#Int]) -> #List[#Int] = do
+  return reverse($xs) ;
+end @rev ;

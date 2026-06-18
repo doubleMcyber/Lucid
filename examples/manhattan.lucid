@@ -1,0 +1,7 @@
+record #Point = { %x : #Int, %y : #Int } ;
+
+fn @manhattan ($p : #Point, $q : #Point) -> #Int = do
+  let $dx : #Int = abs(sub(get %x($p), get %x($q))) ;
+  let $dy : #Int = abs(sub(get %y($p), get %y($q))) ;
+  return add($dx, $dy) ;
+end @manhattan ;

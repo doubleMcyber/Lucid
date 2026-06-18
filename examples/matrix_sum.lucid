@@ -1,0 +1,9 @@
+fn @msum ($m : #List[#List[#Int]]) -> #Int = do
+  var $total : #Int = 0 ;
+  foreach $row : #List[#Int] in $m do
+    foreach $x : #Int in $row do
+      set $total = add($total, $x) ;
+    end foreach ;
+  end foreach ;
+  return $total ;
+end @msum ;

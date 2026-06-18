@@ -1,0 +1,7 @@
+fn @sum ($xs : #List[#Int]) -> #Int = do
+  var $acc : #Int = 0 ;
+  foreach $x : #Int in $xs do
+    set $acc = add($acc, $x) ;
+  end foreach ;
+  return $acc ;
+end @sum ;

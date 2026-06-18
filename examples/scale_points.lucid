@@ -1,0 +1,14 @@
+record #Point = { %x : #Int, %y : #Int } ;
+
+fn @scale ($p : #Point, $k : #Int) -> #Point = do
+  return new #Point { %x = mul(get %x($p), $k), %y = mul(get %y($p), $k) } ;
+end @scale ;
+
+fn @scale_all ($ps : #List[#Point], $k : #Int) -> #Int = do
+  var $acc : #Int = 0 ;
+  foreach $p : #Point in $ps do
+    let $s : #Point = @scale($p, $k) ;
+    set $acc = add($acc, add(get %x($s), get %y($s))) ;
+  end foreach ;
+  return $acc ;
+end @scale_all ;

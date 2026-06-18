@@ -1,0 +1,10 @@
+fn @fib ($n : #Int) -> #Int = do
+  var $a : #Int = 0 ;
+  var $b : #Int = 1 ;
+  foreach $i : #Int in range(0, $n) do
+    let $t : #Int = add($a, $b) ;
+    set $a = $b ;
+    set $b = $t ;
+  end foreach ;
+  return $a ;
+end @fib ;

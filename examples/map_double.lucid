@@ -1,0 +1,7 @@
+fn @dbl ($n : #Int) -> #Int = do
+  return mul($n, 2) ;
+end @dbl ;
+
+fn @mapdbl ($xs : #List[#Int]) -> #List[#Int] = do
+  return map($xs, @dbl) ;
+end @mapdbl ;

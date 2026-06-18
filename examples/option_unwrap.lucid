@@ -1,0 +1,5 @@
+variant #Opt = Some(#Int) | None() ;
+
+fn @unwrap_or ($o : #Opt, $d : #Int) -> #Int = do
+  return match #Opt $o of case Some($v : #Int) -> $v case None() -> $d end match ;
+end @unwrap_or ;

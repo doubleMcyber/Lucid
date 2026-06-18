@@ -1,0 +1,4 @@
+fn @greet ($name : #Str) -> #Str = do
+  let $hi : #Str = concat("hello ", $name) ;
+  return concat($hi, "!") ;
+end @greet ;

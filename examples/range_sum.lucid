@@ -1,0 +1,7 @@
+fn @add2 ($a : #Int, $b : #Int) -> #Int = do
+  return add($a, $b) ;
+end @add2 ;
+
+fn @rsum ($lo : #Int, $hi : #Int) -> #Int = do
+  return foldl(range($lo, $hi), 0, @add2) ;
+end @rsum ;

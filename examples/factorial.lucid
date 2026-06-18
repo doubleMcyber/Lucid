@@ -1,0 +1,7 @@
+fn @mul2 ($a : #Int, $b : #Int) -> #Int = do
+  return mul($a, $b) ;
+end @mul2 ;
+
+fn @fact ($n : #Int) -> #Int = do
+  return foldl(range(1, add($n, 1)), 1, @mul2) ;
+end @fact ;

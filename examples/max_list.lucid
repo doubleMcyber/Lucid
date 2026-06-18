@@ -1,0 +1,7 @@
+fn @maxl ($xs : #List[#Int]) -> #Int = do
+  var $best : #Int = head_or($xs, 0) ;
+  foreach $x : #Int in $xs do
+    set $best = max($best, $x) ;
+  end foreach ;
+  return $best ;
+end @maxl ;

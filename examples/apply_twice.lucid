@@ -1,0 +1,11 @@
+fn @inc ($n : #Int) -> #Int = do
+  return add($n, 1) ;
+end @inc ;
+
+fn @twice ($f : #Fn[(#Int) -> #Int], $x : #Int) -> #Int = do
+  return apply1($f, apply1($f, $x)) ;
+end @twice ;
+
+fn @run ($x : #Int) -> #Int = do
+  return @twice(@inc, $x) ;
+end @run ;

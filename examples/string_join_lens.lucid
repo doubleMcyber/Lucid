@@ -1,0 +1,7 @@
+fn @total_len ($xs : #List[#Str]) -> #Int = do
+  var $n : #Int = 0 ;
+  foreach $s : #Str in $xs do
+    set $n = add($n, len_str($s)) ;
+  end foreach ;
+  return $n ;
+end @total_len ;
