@@ -50,8 +50,10 @@ synthetic-data engine (Loom) and an evaluation testbed.
       (PRD §7.1 open question), Lucid vs. an equivalent Python rendering.
 - [x] **Qwen3-0.6B LoRA fine-tune on MPS** + **base-vs-tuned A/B**
       (`scripts/experiment.py`) → `RESULTS.md` (PRD M6 / H1 / H2).
-      **Result:** base 0% valid Lucid → fine-tuned **100% parse, 78–98%
-      typecheck, 23–37% executed pass@1**. H1/H2 supported on a compact subset.
+      **Result:** base 0% valid Lucid → fine-tuned **100% parse, 80–98%
+      typecheck, 25–43% executed pass@1**. H1/H2 supported on a compact subset.
+      (Eval harness adversarially audited: leakage-free at the prompt level,
+      held-out IO, empty output rejected; numbers are post-fix.)
 
 ### B. Agent-usefulness — ROADMAP
 - [x] Execution-feedback evaluation (pass@1 vs hidden IO) — in the eval harness.

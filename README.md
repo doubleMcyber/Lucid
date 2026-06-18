@@ -84,14 +84,16 @@ held-out tasks (`scripts/experiment.py`, full write-up in `RESULTS.md`):
 | metric | base model | fine-tuned |
 |---|---|---|
 | parse-rate (any valid Lucid) | **0%** | **100%** |
-| typecheck-rate (H1) | **0%** | **78–98%** |
-| executed pass@1 (H2) | **0%** | **23–37%** |
+| typecheck-rate (H1) | **0%** | **80–98%** |
+| executed pass@1 (H2) | **0%** | **25–43%** |
 
 The base model never produces valid Lucid; after fine-tuning it **always** emits
-parseable code, usually type-correct, and a third of the time (from IO examples)
-code that runs and reproduces the held-out outputs. See `RESULTS.md` for setup,
-caveats, and MPS engineering notes; `IMPROVEMENTS.md` for the gap analysis and
-roadmap (incl. the matched-baseline pipeline for H3/H4).
+parseable code, usually type-correct, and — from IO examples — code that runs and
+reproduces a **held-out** input nearly half the time. The eval harness was
+adversarially audited and hardened (leakage-free at the prompt level, held-out IO,
+empty output rejected); see `RESULTS.md` for setup, the integrity notes, caveats,
+and MPS engineering notes; `IMPROVEMENTS.md` for the gap analysis and roadmap
+(incl. the matched-baseline pipeline for H3/H4).
 
 ```bash
 # tokenizer-friendliness analysis (PRD §7.1) and the experiment

@@ -94,6 +94,12 @@ class EvalResult:
         }
 
 
+def _eval_io(rec: dict) -> list:
+    """The IO the generated program is scored against — the held-out remainder for
+    io_to_code (`eval_io`), falling back to `io_examples` for older records."""
+    return rec["eval_io"] if "eval_io" in rec else rec.get("io_examples", [])
+
+
 def _exec_passes(module, io_examples, cfg: ExecConfig) -> bool:
     if not io_examples:
         return False
@@ -119,12 +125,19 @@ def evaluate(items: list[tuple[dict, str]], exec_config: Optional[ExecConfig] = 
         parsed = None
         try:
             module = parse(prog_text)
-            parsed = module
-            res.n_parse += 1
         except LucidError:
             if keep_details:
                 res.details.append({"id": rec.get("id"), "stage": "parse_fail"})
             continue
+        # A degenerate "program" — empty/whitespace output, or one with no
+        # functions — parses and typechecks vacuously. It is not a program, so do
+        # not credit it (this would otherwise inflate parse_rate/typecheck_rate).
+        if not prog_text.strip() or not module.program.functions():
+            if keep_details:
+                res.details.append({"id": rec.get("id"), "stage": "empty"})
+            continue
+        parsed = module
+        res.n_parse += 1
         typed = False
         try:
             typecheck(parsed)
@@ -132,7 +145,7 @@ def evaluate(items: list[tuple[dict, str]], exec_config: Optional[ExecConfig] = 
             typed = True
         except LucidError:
             pass
-        if typed and _exec_passes(parsed, rec.get("io_examples", []), cfg):
+        if typed and _exec_passes(parsed, _eval_io(rec), cfg):
             res.n_exec_pass += 1
         try:
             if print_program(parsed.program) == rec.get("reference", "\0"):

@@ -89,6 +89,49 @@ def test_extract_program_keeps_long_valid_program():
     assert extract_program(fns) == fns
 
 
+def test_empty_generation_not_credited():
+    """Whitespace-only or stop-marker-only output is not a program: it must score
+    0 on parse_rate and typecheck_rate (regression: an empty module parses and
+    typechecks vacuously)."""
+    rec = {"id": "x", "reference": "fn @main () -> #Int = do return 0 ; end @main ;",
+           "eval_io": [{"input": [], "output": 0}]}
+    for junk in ["", "   \n\n", "\n\n\n", "```", "<|im_end|>"]:
+        res = evaluate([(rec, junk)])
+        assert res.parse_rate == 0.0, junk
+        assert res.typecheck_rate == 0.0, junk
+        assert res.exec_pass_at_1 == 0.0, junk
+
+
+def test_export_split_is_prompt_level_leakage_free(tmp_path):
+    """No test prompt may also appear in train — distinct programs can collapse to
+    identical prompts, which would hand the model a memorizable answer."""
+    ds = _make_dataset(tmp_path)
+    exp = str(tmp_path / "exp")
+    export_dataset(ds, exp, tasks=["spec_to_code", "io_to_code"], test_pct=25)
+    train = [json.loads(l) for l in open(os.path.join(exp, "train.jsonl"))]
+    test = [json.loads(l) for l in open(os.path.join(exp, "test.jsonl"))]
+    train_prompts = {e["prompt"] for e in train}
+    test_prompts = {e["prompt"] for e in test}
+    assert train_prompts.isdisjoint(test_prompts), "prompt leaked across split"
+
+
+def test_io_to_code_eval_uses_held_out_io(tmp_path):
+    """io_to_code test items carry held-out eval_io that is NOT shown in the
+    prompt, so exec_pass@1 measures generalization, not reproduction."""
+    from loom.export import PROMPT_K, _fmt_io
+    ds = _make_dataset(tmp_path)
+    exp = str(tmp_path / "exp")
+    export_dataset(ds, exp, tasks=["io_to_code"], test_pct=40)
+    test = [json.loads(l) for l in open(os.path.join(exp, "test.jsonl"))]
+    assert test, "expected some io_to_code test items"
+    for e in test:
+        assert e["eval_io"], "io_to_code test item must have held-out IO"
+        shown = _fmt_io(e["io_examples"], PROMPT_K)
+        # every held-out input is beyond the first PROMPT_K shown in the prompt
+        assert e["eval_io"] == e["io_examples"][PROMPT_K:]
+        assert shown in e["prompt"]
+
+
 def test_wrong_but_valid_program_fails_exec_not_parse(tmp_path):
     """A program that parses+typechecks but computes the wrong thing should pass
     parse/typecheck but fail exec_pass@1."""
