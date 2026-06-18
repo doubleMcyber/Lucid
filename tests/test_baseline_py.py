@@ -90,6 +90,27 @@ def test_sandbox_runs_normal_code():
     assert out["outputs"][0] == {"ok": True, "output": 6}
 
 
+def test_python_corpus_matches_lucid_corpus(tmp_path):
+    """The Python baseline must be drawn from the *same* programs/tasks with the
+    *same* split as Lucid — otherwise H1-H4 confound language with task."""
+    from loom.export import export_dataset
+    raw = str(tmp_path / "raw")
+    generate(GenSpec(out_dir=raw, n_examples=200, base_seed=9,
+                     use_curriculum=False, sampler_config=_tiny(),
+                     n_inputs=4, want_trace=False, want_repair=False,
+                     want_refactor=False, want_completion=False))
+    lucid = str(tmp_path / "lucid")
+    py = str(tmp_path / "py")
+    ls = export_dataset(raw, lucid, tasks=["spec_to_code", "io_to_code"], test_pct=20)
+    ps = export_python_dataset(raw, py, tasks=["spec_to_code", "io_to_code"], test_pct=20)
+    assert ls["train"] == ps["train"] and ls["test"] == ps["test"]
+
+    def keys(path):
+        return {(json.loads(l)["id"], json.loads(l)["task"]) for l in open(path)}
+    assert keys(os.path.join(lucid, "train.jsonl")) == keys(os.path.join(py, "train.jsonl"))
+    assert keys(os.path.join(lucid, "test.jsonl")) == keys(os.path.join(py, "test.jsonl"))
+
+
 def test_extract_python_salvages_noise():
     prog = "def main(x):\n    return x + 1"
     noisy = prog + "\n### Spec:\nblah"
