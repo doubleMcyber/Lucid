@@ -132,6 +132,18 @@ def test_io_to_code_eval_uses_held_out_io(tmp_path):
         assert shown in e["prompt"]
 
 
+def test_full_leak_audit_passes(tmp_path):
+    """The exported split must be clean on every leakage vector (program, prompt,
+    reference, shown-vs-held-out IO, empty)."""
+    from loom.leakcheck import audit_split
+    ds = _make_dataset(tmp_path)
+    exp = str(tmp_path / "exp")
+    export_dataset(ds, exp, tasks=["spec_to_code", "io_to_code"], test_pct=25)
+    rep = audit_split(os.path.join(exp, "train.jsonl"), os.path.join(exp, "test.jsonl"))
+    assert rep.clean, rep.summary()
+    assert rep.n_test > 0
+
+
 def test_wrong_but_valid_program_fails_exec_not_parse(tmp_path):
     """A program that parses+typechecks but computes the wrong thing should pass
     parse/typecheck but fail exec_pass@1."""
