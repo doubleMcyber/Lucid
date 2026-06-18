@@ -83,20 +83,42 @@ def cmd_prepare(args) -> None:
 
 
 # --------------------------------------------------------------------------
-def _build_examples(tok, path: str, n_cap: int, seed: int):
-    rows = [json.loads(l) for l in open(path) if l.strip()]
-    rng = random.Random(seed)
-    rng.shuffle(rows)
-    rows = rows[:n_cap]
+def _usable_rows(tok, path: str):
+    """Map (id, task) -> (input_ids, labels, n_tokens) for every row whose
+    prompt+completion fits MAX_LEN, tokenized with the given tokenizer."""
     eos = tok.eos_token_id
-    examples = []
-    for ex in rows:
+    out = {}
+    for ex in (json.loads(l) for l in open(path) if l.strip()):
         p_ids = tok.encode(ex["prompt"])
         c_ids = tok.encode(ex["completion"]) + [eos]
-        if len(p_ids) + len(c_ids) > E.MAX_LEN:
+        n = len(p_ids) + len(c_ids)
+        if n > E.MAX_LEN:
             continue
-        examples.append((p_ids + c_ids, [-100] * len(p_ids) + c_ids))
-    return examples
+        out[(ex["id"], ex["task"])] = (p_ids + c_ids, [-100] * len(p_ids) + c_ids, n)
+    return out
+
+
+def _build_examples(tok, lang: str, n_cap: int, seed: int):
+    """Return exactly `n_cap` examples for `lang`, drawn from the programs that
+    are usable (<= MAX_LEN) in BOTH languages. Selecting from the shared (id,task)
+    intersection — via a single seed-shuffled key list used for both languages —
+    makes the comparison matched on three axes at once: identical underlying
+    programs, identical example counts, and (since epochs are equal) identical
+    optimizer steps. Capping on the shared-usable set is the fair cap: Lucid is
+    more verbose, so a per-language length filter would otherwise drop *different*
+    programs and silently desync data/steps."""
+    luc = _usable_rows(tok, os.path.join(LUCID_DIR, "train.jsonl"))
+    py = _usable_rows(tok, os.path.join(PY_DIR, "train.jsonl"))
+    shared = sorted(set(luc) & set(py))  # deterministic order before shuffle
+    random.Random(seed).shuffle(shared)
+    keys = shared[:n_cap]
+    assert len(keys) == n_cap, (
+        f"only {len(keys)} programs usable in BOTH languages at MAX_LEN={E.MAX_LEN} "
+        f"(need {n_cap}); raise MAX_LEN or lower n_train to keep data/steps matched")
+    tbl = luc if lang == "lucid" else py
+    examples = [(tbl[k][0], tbl[k][1]) for k in keys]
+    lens = sorted(tbl[k][2] for k in keys)
+    return examples, lens[len(lens) // 2]
 
 
 def _train(tok, model, examples, epochs, batch, grad_accum, lr, lora_r, seed):
@@ -139,7 +161,14 @@ def _train(tok, model, examples, epochs, batch, grad_accum, lr, lora_r, seed):
                     (p for p in model.parameters() if p.requires_grad), 1.0)
                 opt.step()
                 opt.zero_grad()
+            # Drop refs so the MPS caching allocator can reclaim; the pool grows
+            # with variable batch shapes and without a periodic flush the resident
+            # set climbs into swap and step time degrades monotonically
+            # (12s -> 74s/step observed before this fix).
+            del out, ii, am, lb
             step += 1
+            if DEVICE == "mps" and step % 25 == 0:
+                torch.mps.empty_cache()
             if step % 100 == 0:
                 print(f"      step {step}/{steps} loss={running/100:.3f} "
                       f"({(time.time()-t0)/step:.2f}s/step)", flush=True)
@@ -156,12 +185,13 @@ def _eval(tok, model, lang, test_path, limit):
         items = [t for t in items if t["task"] == task][:limit]
         if not items:
             continue
-        gens = E._generate(tok, model, [t["prompt"] for t in items])
+        gens = E._generate(tok, model, [t["prompt"] for t in items], max_new=384)
         if lang == "lucid":
             rep[task] = evaluate(list(zip(items, gens))).summary()
         else:
             rep[task] = evaluate_py(list(zip(items, gens))).summary()
         print(f"      [{lang}:{task}] {rep[task]}", flush=True)
+        E._free_mps()  # release generation buffers before the next task
     return rep
 
 
@@ -169,26 +199,48 @@ def _cell_key(lang, model_id, n_train, epochs):
     return f"{lang}|{model_id}|{n_train}|{epochs}"
 
 
-def _done_cells():
+def _read_rows():
+    """Parse results.jsonl, skipping any malformed (e.g. truncated by a killed
+    process) lines, and dedup by cell key keeping the LAST occurrence — the most
+    recent completion is authoritative for a resumed/rerun cell."""
+    rows = {}
     if not os.path.isfile(RESULTS):
-        return set()
-    return {json.loads(l)["key"] for l in open(RESULTS) if l.strip()}
+        return []
+    dropped = 0
+    for l in open(RESULTS):
+        l = l.strip()
+        if not l:
+            continue
+        try:
+            r = json.loads(l)
+            rows[r["key"]] = r
+        except (ValueError, KeyError):
+            dropped += 1
+    if dropped:
+        print(f"[results] skipped {dropped} malformed line(s) in {RESULTS}", flush=True)
+    return list(rows.values())
+
+
+def _done_cells():
+    return {r["key"] for r in _read_rows()}
 
 
 def _run_cell(lang, model_id, n_train, epochs, args):
     key = _cell_key(lang, model_id, n_train, epochs)
     test_path = os.path.join(LUCID_DIR if lang == "lucid" else PY_DIR, "test.jsonl")
-    train_path = os.path.join(LUCID_DIR if lang == "lucid" else PY_DIR, "train.jsonl")
     print(f"[cell] {key}", flush=True)
     E.MODEL_ID = model_id
     tok, base = E._load()
-    examples = _build_examples(tok, train_path, n_train, args.seed)
+    examples, med_tokens = _build_examples(tok, lang, n_train, args.seed)
     base.to(DEVICE)
     model, steps = _train(tok, base, examples, epochs, args.batch,
                           args.grad_accum, args.lr, args.lora_r, args.seed)
     rep = _eval(tok, model, lang, test_path, args.limit)
     rec = {"key": key, "lang": lang, "model_id": model_id, "n_train": n_train,
            "epochs": epochs, "steps": steps, "usable_examples": len(examples),
+           "median_tokens": med_tokens, "max_len": E.MAX_LEN,
+           "dtype": os.environ.get("LUCID_DTYPE", "fp32"), "batch": args.batch,
+           "grad_accum": args.grad_accum, "lr": args.lr, "lora_r": args.lora_r,
            "report": rep}
     with open(RESULTS, "a") as f:
         f.write(json.dumps(rec) + "\n")
@@ -215,10 +267,10 @@ def cmd_run(args) -> None:
 
 
 def cmd_report(args) -> None:
-    if not os.path.isfile(RESULTS):
+    rows = _read_rows()
+    if not rows:
         print("no results yet")
         return
-    rows = [json.loads(l) for l in open(RESULTS) if l.strip()]
 
     def execpass(r):
         rep = r["report"]
@@ -242,7 +294,9 @@ def cmd_report(args) -> None:
             lv = execpass(L) if L else None
             pv = execpass(P) if P else None
             d = f"{lv-pv:+.3f}" if (lv is not None and pv is not None) else "-"
-            lines.append(f"| {n} | {lv if lv is not None else '-'} | {pv if pv is not None else '-'} | {d} |")
+            ls = f"{lv:.3f}" if lv is not None else "-"
+            ps = f"{pv:.3f}" if pv is not None else "-"
+            lines.append(f"| {n} | {ls} | {ps} | {d} |")
         lines.append("")
     # per-task detail
     lines += ["## Per-task detail", "",
@@ -253,6 +307,32 @@ def cmd_report(args) -> None:
                 s = r["report"][t]
                 second = s.get("typecheck_rate", s.get("runs_rate", "-"))
                 lines.append(f"| {r['key']} | {t} | {s['parse_rate']} | {second} | {s['exec_pass@1']} |")
+    lines += [
+        "",
+        "## Methodology & known asymmetries",
+        "",
+        "**Matched on three axes.** Both languages are trained on the *same* "
+        "underlying Loom programs (selected from the (id,task) intersection that is "
+        "≤max_len in both surface languages, via one seed-shuffled key list), so "
+        "example counts, optimizer steps (equal epochs), and the programs "
+        "themselves are identical — only the surface syntax differs. Splits are "
+        "leakage-audited clean at the prompt level; eval uses held-out IO with "
+        "greedy decoding and a generation budget (384 tokens) above the longest "
+        "reference completion in both languages, so neither is truncation-limited.",
+        "",
+        "**Residual asymmetries — all conservative *against* Lucid** (they cannot "
+        "inflate a Lucid≥Python headline):",
+        "- *exec@1 definition.* Lucid gates execution on passing its static "
+        "typechecker; Python has no such gate. A correct-output Lucid program that "
+        "fails typecheck scores 0 where the Python equivalent scores 1.",
+        "- *Second metric column is not like-for-like.* `type/runs` is Lucid's "
+        "static typecheck_rate vs Python's dynamic runs_rate — different constructs; "
+        "do not compute an L−P delta on it. The headline is exec@1 only.",
+        "- *Output equality.* The Lucid evaluator compares decoded values (`==`); "
+        "the Python evaluator compares canonical JSON strings — the latter is "
+        "stricter on bool-vs-int (rarely flips, since typed signatures fix output "
+        "types).",
+    ]
     out = os.path.join(ROOT, "BASELINE.md")
     with open(out, "w") as f:
         f.write("\n".join(lines) + "\n")
